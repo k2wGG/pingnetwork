@@ -14,11 +14,11 @@ import figlet from 'figlet';
 import enquirer from 'enquirer';
 import UserAgent from 'user-agents';
 
-// ESM __dirname
+// Для ESM __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
-// load .env
+// Загрузка .env
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 // USER_ID & DEVICE_ID
@@ -35,7 +35,7 @@ if (!DEVICE_ID) {
   console.log(chalk.green('[OK]') + ` Сгенерирован DEVICE_ID: ${DEVICE_ID}`);
 }
 
-// prepare User-Agent
+// Подготовка User-Agent
 const ua = new UserAgent({ deviceCategory: 'desktop' });
 const UA_STRING = ua.toString();
 
@@ -45,7 +45,7 @@ const WS_HEADERS = {
   'accept-language': 'en-US,en;q=0.9'
 };
 
-// GA headers (if used)
+// GA headers (если используются)
 const HTTP_HEADERS = {
   'user-agent': UA_STRING,
   'accept': '*/*',
@@ -56,7 +56,7 @@ const HTTP_HEADERS = {
   'sec-ch-ua-platform': `"${ua.data.platform}"`
 };
 
-// config
+// Конфигурация
 const CONFIG = {
   USER_ID,
   DEVICE_ID,
@@ -67,7 +67,7 @@ const CONFIG = {
   }
 };
 
-// colored logs
+// Цветной логгер
 const log = {
   info:    msg => console.log(chalk.blue(' >'), msg),
   success: msg => console.log(chalk.green(' ✓'), msg),
@@ -75,7 +75,7 @@ const log = {
   error:   msg => console.log(chalk.red(' ✗'), msg),
 };
 
-// banner
+// Баннер
 function showBanner() {
   console.clear();
   console.log(
@@ -84,7 +84,7 @@ function showBanner() {
   console.log(chalk.gray('      Ping Network — TG: @Nod3r\n'));
 }
 
-// send analytics
+// Отправка аналитики
 async function sendAnalytics() {
   if (!CONFIG.ga.measurement_id || !CONFIG.ga.api_secret) {
     log.warn('Аналитика отключена в .env');
@@ -108,13 +108,13 @@ async function sendAnalytics() {
   }
 }
 
-// connect WS and output points
+// Подключение к WebSocket и вывод баллов
 function connectWebSocket() {
   let reconnectCount = 0;
   const maxReconnect = 5;
   const spinner = ora({ text: 'Подключение к серверу...', color: 'cyan' }).start();
 
-  // we'll use this spinner for both initial wait and subsequent ticks
+  // Используем этот спиннер для начального ожидания и последующих обновлений
   let pointsSpinner;
 
   function connect() {
@@ -124,10 +124,10 @@ function connectWebSocket() {
       spinner.succeed('WebSocket подключен');
       reconnectCount = 0;
 
-      // analytics if configured
+      // Отправка аналитики, если настроено
       sendAnalytics();
 
-      // start waiting spinner
+      // Запуск спиннера ожидания
       pointsSpinner = ora({ text: 'Ожидаем первого обновления баллов…', color: 'yellow' }).start();
     });
 
@@ -136,7 +136,6 @@ function connectWebSocket() {
         const msg = JSON.parse(data);
         if (msg.type === 'client_points') {
           pointsSpinner.succeed(`Баллы: ${Number(msg.data.amount).toFixed(2)}`);
-          // restart spinner for next update
           pointsSpinner = ora({ text: 'Ожидаем следующих начислений…', color: 'yellow' }).start();
         }
         if (msg.type === 'referral_points') {
@@ -152,26 +151,38 @@ function connectWebSocket() {
       log.warn('Соединение закрыто');
       if (reconnectCount < maxReconnect) {
         const delay = 2_000 * ++reconnectCount;
-        log.info(`Переподключение через ${delay/1000}s…`);
+        log.info(`Переподключение через ${delay / 1000}s…`);
         setTimeout(connect, delay);
       } else {
         spinner.fail('Не удалось переподключиться');
       }
     });
 
-    ws.on('error', err => log.error(`WS ошибка: ${err.message}`));
+    ws.on('error', err => {
+      log.error(`Ошибка WebSocket: ${err.message}`);
+      setTimeout(connect, 3000); // Попытка переподключения через 3 секунды
+    });
 
-    // heartbeat without logs
+    // Пинг для поддержания соединения
     const iv = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type:'ping' }));
-      else clearInterval(iv);
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'ping' }));
+      } else {
+        clearInterval(iv);
+      }
     }, 30_000);
   }
 
   connect();
+
+  // Переподключение раз в 10 минут
+  setInterval(() => {
+    log.info('Проверка WebSocket соединения…');
+    connect(); // Попытка переподключения раз в 10 минут
+  }, 600_000); // 10 минут = 600,000 миллисекунд
 }
 
-// main menu
+// Главное меню
 async function mainMenu() {
   showBanner();
   console.log(chalk.gray(` USER_ID:   ${CONFIG.USER_ID}`));
@@ -201,5 +212,5 @@ async function mainMenu() {
   }
 }
 
-// start
+// Запуск
 mainMenu();
